@@ -1,0 +1,47 @@
+{
+  "name": "adpilot-backend",
+  "version": "2.0.0",
+  "description": "AdPilot - Amazon PPC Optimization Engine",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:setup": "ts-node src/db/setup.ts",
+    "db:migrate": "ts-node src/db/migrate.ts",
+    "parse": "ts-node src/parsers/cli.ts",
+    "import-categories": "ts-node src/scripts/importCategories.ts",
+    "ownership": "ts-node src/services/ownershipCli.ts",
+    "export:bulk": "ts-node src/services/exportCli.ts bulk",
+    "export:perpetua": "ts-node src/services/exportCli.ts perpetua",
+    "export:matrix": "ts-node src/services/exportCli.ts matrix",
+    "export:all": "ts-node src/services/exportCli.ts all",
+    "sync:databridge": "ts-node src/services/databridgeCli.ts"
+  },
+  "keywords": [
+    "amazon",
+    "ppc",
+    "ads",
+    "optimization"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@types/multer": "^2.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.1",
+    "express": "^4.18.2",
+    "multer": "^2.0.2",
+    "pg": "^8.11.3",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.5",
+    "@types/pg": "^8.10.9",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.3"
+  }
+}
