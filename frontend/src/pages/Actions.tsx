@@ -196,19 +196,19 @@ export default function Actions() {
                           <PriorityBadge priority={action.priority} />
                         </td>
                         <td className="py-3 px-4 text-slate-700">
-                          {formatActionType(action.type)}
+                          {formatActionType(action.action_type)}
                         </td>
                         <td className="py-3 px-4 text-slate-900 font-medium max-w-[200px] truncate">
-                          {action.campaign_name}
+                          {action.target_campaign || '—'}
                         </td>
                         <td className="py-3 px-4 text-slate-700 max-w-[180px] truncate">
-                          {action.keyword_or_asin}
+                          {action.target_keyword || action.target_asin || '—'}
                         </td>
                         <td className="py-3 px-4 text-slate-500 max-w-[220px] truncate">
                           {action.reason}
                         </td>
                         <td className="py-3 px-4 text-right text-slate-700">
-                          {formatMoney(action.estimated_savings)}
+                          {formatMoney(parseFloat(action.estimated_monthly_savings) || 0)}
                         </td>
                         <td className="py-3 px-4 text-center">
                           <StatusBadge status={action.status} />

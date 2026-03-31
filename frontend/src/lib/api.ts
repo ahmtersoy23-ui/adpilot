@@ -25,21 +25,28 @@ export interface Snapshot {
   id: number;
   period_start: string;
   period_end: string;
-  status: string;
-  row_count: number;
-  created_at: string;
+  marketplace: string;
+  total_spend: string;
+  total_sales: string;
+  acos: string;
+  total_rows: number;
+  upload_date: string;
 }
 
 export interface Action {
   id: number;
   snapshot_id: number;
-  channel: string;
+  application_channel: string;
   priority: string;
-  type: string;
-  campaign_name: string;
-  keyword_or_asin: string;
+  action_type: string;
+  target_campaign: string | null;
+  target_ad_group: string | null;
+  target_keyword: string | null;
+  target_asin: string | null;
+  current_value: string | null;
+  recommended_value: string | null;
   reason: string;
-  estimated_savings: number;
+  estimated_monthly_savings: string;
   status: string;
   created_at: string;
 }
@@ -54,28 +61,39 @@ export interface ActionSummary {
 
 export interface OwnershipRow {
   id: number;
-  snapshot_id: number;
-  keyword: string;
+  keyword_text: string;
   hero_asin: string;
   hero_product_group: string;
   category: string;
-  score: number;
-  role: string;
-  role_count: number;
+  ownership_score: string;
+  support_count: string;
+  total_competitors: string;
+  is_contested: boolean;
+}
+
+export interface OwnershipResponse {
+  data: OwnershipRow[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface CategoryPerformance {
   category: string;
+  asin_count: string;
+  product_groups: string;
+  total_spend: string;
+  total_sales: string;
+  // Computed by fetchCategories
+  acos: number;
   spend: number;
   sales: number;
-  acos: number;
-  orders: number;
 }
 
 // ── API functions ──────────────────────────────────────
 
 export async function fetchHealth() {
-  const { data } = await api.get<HealthResponse>('/health');
+  const { data } = await axios.get<HealthResponse>('/health', { withCredentials: true });
   return data;
 }
 
@@ -102,22 +120,54 @@ export async function fetchActions(
   return data;
 }
 
-export async function fetchActionSummary(snapshotId: number) {
-  const { data } = await api.get<ActionSummary>(`/snapshots/${snapshotId}/actions/summary`);
-  return data;
+export async function fetchActionSummary(snapshotId: number): Promise<ActionSummary> {
+  const { data } = await api.get(`/snapshots/${snapshotId}/actions/summary`);
+
+  // API returns flat array: [{ action_type, count, total_savings }, ...]
+  // Transform to ActionSummary shape
+  const rows = Array.isArray(data) ? data : [];
+  const byType: Record<string, number> = {};
+  const byChannel: Record<string, number> = {};
+  const byPriority: Record<string, number> = {};
+  let total = 0;
+  let savings = 0;
+
+  for (const r of rows) {
+    const type = r.action_type || r.type || 'unknown';
+    const count = parseInt(r.count) || 0;
+    const sav = parseFloat(r.total_savings) || 0;
+
+    byType[type] = (byType[type] || 0) + count;
+    total += count;
+    savings += sav;
+
+    if (r.application_channel && r.application_channel !== 'all') {
+      byChannel[r.application_channel] = (byChannel[r.application_channel] || 0) + count;
+    }
+    if (r.priority && r.priority !== 'all') {
+      byPriority[r.priority] = (byPriority[r.priority] || 0) + count;
+    }
+  }
+
+  return { total, byType, byChannel, byPriority, savings };
 }
 
 export async function fetchOwnership(
   snapshotId: number,
   params?: { limit?: number; offset?: number; search?: string }
-) {
-  const { data } = await api.get<OwnershipRow[]>(`/snapshots/${snapshotId}/ownership`, { params });
+): Promise<OwnershipResponse> {
+  const { data } = await api.get<OwnershipResponse>(`/snapshots/${snapshotId}/ownership`, { params });
   return data;
 }
 
-export async function fetchCategories(snapshotId: number) {
-  const { data } = await api.get<CategoryPerformance[]>(`/snapshots/${snapshotId}/categories`);
-  return data;
+export async function fetchCategories(snapshotId: number): Promise<CategoryPerformance[]> {
+  const { data } = await api.get(`/snapshots/${snapshotId}/categories`);
+  return (data || []).map((r: any) => ({
+    ...r,
+    spend: parseFloat(r.total_spend) || 0,
+    sales: parseFloat(r.total_sales) || 0,
+    acos: parseFloat(r.acos) || 0,
+  }));
 }
 
 export async function patchActionStatus(actionId: number, status: 'approved' | 'skipped' | 'rejected') {

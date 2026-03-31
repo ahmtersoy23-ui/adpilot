@@ -10,14 +10,13 @@ const PAGE_SIZE = 100;
 export default function Ownership() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [rows, setRows] = useState<OwnershipRow[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
 
-  // Load snapshot
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -32,7 +31,6 @@ export default function Ownership() {
     return () => { cancelled = true; };
   }, []);
 
-  // Load ownership data
   const loadData = useCallback(async (newOffset: number) => {
     if (!snapshot) return;
     setLoading(true);
@@ -42,10 +40,10 @@ export default function Ownership() {
         offset: newOffset,
       };
       if (search) params.search = search;
-      const data = await fetchOwnership(snapshot.id, params);
-      setRows(data);
+      const res = await fetchOwnership(snapshot.id, params);
+      setRows(res.data);
+      setTotal(res.total);
       setOffset(newOffset);
-      setHasMore(data.length === PAGE_SIZE);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load ownership data');
     } finally {
@@ -57,31 +55,14 @@ export default function Ownership() {
     if (snapshot) loadData(0);
   }, [snapshot, loadData]);
 
-  // Search handler
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     setSearch(searchInput);
   }
 
-  // Compute summary
-  const heroCount = rows.filter((r) => r.role === 'Hero').length;
-  const contestedCount = rows.filter((r) => r.role_count > 1).length;
-
-  // Role colors
-  function roleBadge(role: string) {
-    const colors: Record<string, string> = {
-      Hero: 'bg-indigo-100 text-indigo-700',
-      Support: 'bg-emerald-100 text-emerald-700',
-      LongTail: 'bg-slate-100 text-slate-700',
-      Exclude: 'bg-rose-100 text-rose-700',
-    };
-    const cls = colors[role] ?? 'bg-slate-100 text-slate-700';
-    return (
-      <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${cls}`}>
-        {role}
-      </span>
-    );
-  }
+  const contestedCount = rows.filter((r) => r.is_contested).length;
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
   if (error && !snapshot) {
     return (
@@ -91,21 +72,20 @@ export default function Ownership() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <h1 className="text-2xl font-bold text-slate-900">Ownership Matrix</h1>
 
       {/* Summary */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
           <p className="text-sm font-medium text-slate-500">Total Keywords</p>
-          <p className="text-xl font-bold text-slate-900 mt-1">{rows.length}</p>
+          <p className="text-xl font-bold text-slate-900 mt-1">{total.toLocaleString()}</p>
         </div>
         <div className="bg-indigo-50 rounded-lg border border-slate-200 shadow-sm p-4">
-          <p className="text-sm font-medium text-slate-500">Hero Keywords</p>
-          <p className="text-xl font-bold text-indigo-700 mt-1">{heroCount}</p>
+          <p className="text-sm font-medium text-slate-500">Current Page</p>
+          <p className="text-xl font-bold text-indigo-700 mt-1">{rows.length} keywords</p>
         </div>
         <div className="bg-amber-50 rounded-lg border border-slate-200 shadow-sm p-4">
-          <p className="text-sm font-medium text-slate-500">Contested</p>
+          <p className="text-sm font-medium text-slate-500">Contested (this page)</p>
           <p className="text-xl font-bold text-amber-700 mt-1">{contestedCount}</p>
         </div>
       </div>
@@ -144,14 +124,15 @@ export default function Ownership() {
                     <th className="text-left py-3 px-4 font-semibold text-slate-600">Product Group</th>
                     <th className="text-left py-3 px-4 font-semibold text-slate-600">Category</th>
                     <th className="text-right py-3 px-4 font-semibold text-slate-600">Score</th>
-                    <th className="text-center py-3 px-4 font-semibold text-slate-600">Role</th>
-                    <th className="text-right py-3 px-4 font-semibold text-slate-600">Role Count</th>
+                    <th className="text-right py-3 px-4 font-semibold text-slate-600">Support</th>
+                    <th className="text-right py-3 px-4 font-semibold text-slate-600">Competitors</th>
+                    <th className="text-center py-3 px-4 font-semibold text-slate-600">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-slate-400">
+                      <td colSpan={8} className="py-12 text-center text-slate-400">
                         No keywords found
                       </td>
                     </tr>
@@ -162,20 +143,31 @@ export default function Ownership() {
                         className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
                       >
                         <td className="py-3 px-4 font-medium text-slate-900 max-w-[250px] truncate">
-                          {row.keyword}
+                          {row.keyword_text}
                         </td>
                         <td className="py-3 px-4 text-slate-700 font-mono text-xs">
-                          {row.hero_asin}
+                          {row.hero_asin || '—'}
                         </td>
                         <td className="py-3 px-4 text-slate-700 max-w-[200px] truncate">
                           {row.hero_product_group}
                         </td>
-                        <td className="py-3 px-4 text-slate-700">{row.category}</td>
+                        <td className="py-3 px-4 text-slate-700">{row.category || '—'}</td>
                         <td className="py-3 px-4 text-right text-slate-700 font-medium">
-                          {row.score.toFixed(2)}
+                          {parseFloat(row.ownership_score).toFixed(2)}
                         </td>
-                        <td className="py-3 px-4 text-center">{roleBadge(row.role)}</td>
-                        <td className="py-3 px-4 text-right text-slate-700">{row.role_count}</td>
+                        <td className="py-3 px-4 text-right text-slate-700">{row.support_count}</td>
+                        <td className="py-3 px-4 text-right text-slate-700">{row.total_competitors}</td>
+                        <td className="py-3 px-4 text-center">
+                          {row.is_contested ? (
+                            <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
+                              Contested
+                            </span>
+                          ) : (
+                            <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">
+                              Owned
+                            </span>
+                          )}
+                        </td>
                       </tr>
                     ))
                   )}
@@ -186,7 +178,7 @@ export default function Ownership() {
             {/* Pagination */}
             <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-slate-50">
               <p className="text-sm text-slate-500">
-                Showing {offset + 1}–{offset + rows.length}
+                Page {currentPage} of {totalPages} ({total.toLocaleString()} keywords)
               </p>
               <div className="flex gap-2">
                 <button
@@ -197,7 +189,7 @@ export default function Ownership() {
                   Previous
                 </button>
                 <button
-                  disabled={!hasMore}
+                  disabled={currentPage >= totalPages}
                   onClick={() => loadData(offset + PAGE_SIZE)}
                   className="px-3 py-1.5 rounded-md text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >

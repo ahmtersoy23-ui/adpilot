@@ -39,10 +39,10 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, []);
 
-  // Compute totals from categories
-  const totalSpend = categories.reduce((s, c) => s + c.spend, 0);
-  const totalSales = categories.reduce((s, c) => s + c.sales, 0);
-  const totalAcos = totalSales > 0 ? (totalSpend / totalSales) * 100 : 0;
+  // Use snapshot totals (categories only cover categorized ASINs)
+  const totalSpend = snapshot ? parseFloat(snapshot.total_spend) || 0 : 0;
+  const totalSales = snapshot ? parseFloat(snapshot.total_sales) || 0 : 0;
+  const totalAcos = snapshot ? parseFloat(snapshot.acos) || 0 : 0;
 
   function acosColor(acos: number): string {
     if (acos > 30) return 'text-rose-600';
@@ -119,9 +119,9 @@ export default function Dashboard() {
               <p className="text-sm text-slate-500 mt-1">
                 {formatDate(snapshot.period_start)} &mdash; {formatDate(snapshot.period_end)}
                 <span className="ml-3 text-slate-400">|</span>
-                <span className="ml-3">{snapshot.row_count?.toLocaleString() ?? 0} rows</span>
+                <span className="ml-3">{(snapshot.total_rows ?? 0).toLocaleString()} rows</span>
                 <span className="ml-3 text-slate-400">|</span>
-                <span className="ml-3 capitalize">{snapshot.status}</span>
+                <span className="ml-3 capitalize">{snapshot.marketplace}</span>
               </p>
             </div>
             <button
@@ -208,7 +208,7 @@ export default function Dashboard() {
                   <th className="text-right py-2.5 px-3 font-semibold text-slate-600">Spend</th>
                   <th className="text-right py-2.5 px-3 font-semibold text-slate-600">Sales</th>
                   <th className="text-right py-2.5 px-3 font-semibold text-slate-600">ACOS</th>
-                  <th className="text-right py-2.5 px-3 font-semibold text-slate-600">Orders</th>
+                  <th className="text-right py-2.5 px-3 font-semibold text-slate-600">ASINs</th>
                 </tr>
               </thead>
               <tbody>
@@ -220,7 +220,7 @@ export default function Dashboard() {
                     <td className={`py-2.5 px-3 text-right font-medium ${acosColor(cat.acos)}`}>
                       {formatPercent(cat.acos)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-slate-700">{cat.orders.toLocaleString()}</td>
+                    <td className="py-2.5 px-3 text-right text-slate-700">{cat.asin_count}</td>
                   </tr>
                 ))}
               </tbody>
