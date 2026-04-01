@@ -13,8 +13,21 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 bottom-0 w-56 bg-white border-r border-slate-200 flex flex-col z-10">
         {/* Logo */}
-        <div className="h-16 flex items-center px-5 border-b border-slate-100">
-          <span className="text-xl font-bold text-indigo-600 tracking-tight">AdPilot</span>
+        <div className="h-16 flex items-center gap-3 px-5 border-b border-slate-100">
+          <svg width="28" height="28" viewBox="0 0 32 32" className="flex-shrink-0">
+            <defs>
+              <linearGradient id="logo-g" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#818cf8"/>
+                <stop offset="1" stopColor="#4338ca"/>
+              </linearGradient>
+            </defs>
+            <rect width="32" height="32" rx="8" fill="url(#logo-g)"/>
+            <path d="M16 5L7 27h5l2-5h4l2 5h5L16 5zm0 8.5L18.5 19h-5L16 13.5z" fill="#fff"/>
+          </svg>
+          <div>
+            <span className="text-lg font-bold text-slate-900 tracking-tight">Ad</span>
+            <span className="text-lg font-bold text-indigo-600 tracking-tight">Pilot</span>
+          </div>
         </div>
 
         {/* Navigation */}
@@ -40,7 +53,7 @@ export default function Layout() {
 
         {/* Version */}
         <div className="px-5 py-4 border-t border-slate-100">
-          <p className="text-xs text-slate-400">v1.0.0</p>
+          <p className="text-xs text-slate-400">v2.0.0</p>
         </div>
       </aside>
 
