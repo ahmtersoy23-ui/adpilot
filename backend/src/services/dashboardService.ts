@@ -371,34 +371,30 @@ export class DashboardService {
     });
   }
 
-  // ── Category performance (ASIN report + sku_master) ─
+  // ── Category performance (campaign_name → category mapping) ─
 
   async getCategories(period: Period): Promise<CategoryRow[]> {
     const { start, end } = periodRange(period);
 
-    // Get ASIN-level performance from advertised_product_report
+    // Get campaign-level performance from targeting report
     const result = await this.pool.query(`
       SELECT
-        advertised_asin as asin,
+        campaign_name,
         SUM(spend)::numeric as spend,
         SUM(sales_7d)::numeric as sales,
         SUM(orders_7d)::int as orders,
         SUM(clicks)::int as clicks,
         SUM(impressions)::bigint as impressions
-      FROM ads_advertised_product_report
+      FROM ads_targeting_report
       WHERE profile_id = $1
         AND report_date >= $2::date
         AND report_date <= $3::date
-        AND advertised_asin IS NOT NULL
-      GROUP BY advertised_asin
+      GROUP BY campaign_name
     `, [US_PROFILE_ID, start, end]);
 
-    // Get ASIN → category mapping
-    const catMap = await getAsinCategoryMap();
-
-    // Aggregate by category
+    // Map campaign_name → category using product_group extraction + category rules
     const byCategory = new Map<string, {
-      asins: Set<string>;
+      campaigns: Set<string>;
       spend: number;
       sales: number;
       orders: number;
@@ -407,13 +403,13 @@ export class DashboardService {
     }>();
 
     for (const r of result.rows) {
-      const category = catMap.get(r.asin) || 'Uncategorized';
+      const category = campaignToCategory(r.campaign_name);
       let bucket = byCategory.get(category);
       if (!bucket) {
-        bucket = { asins: new Set(), spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
+        bucket = { campaigns: new Set(), spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
         byCategory.set(category, bucket);
       }
-      bucket.asins.add(r.asin);
+      bucket.campaigns.add(r.campaign_name);
       bucket.spend += parseFloat(r.spend) || 0;
       bucket.sales += parseFloat(r.sales) || 0;
       bucket.orders += parseInt(r.orders) || 0;
@@ -421,11 +417,10 @@ export class DashboardService {
       bucket.impressions += parseInt(r.impressions) || 0;
     }
 
-    // Convert to array and sort by spend
     return Array.from(byCategory.entries())
       .map(([category, b]) => ({
         category,
-        asin_count: b.asins.size,
+        asin_count: b.campaigns.size, // campaign count (not ASIN — rename later if needed)
         spend: +b.spend.toFixed(2),
         sales: +b.sales.toFixed(2),
         acos: b.sales > 0 ? +(b.spend / b.sales * 100).toFixed(2) : 0,
@@ -438,4 +433,37 @@ export class DashboardService {
       }))
       .sort((a, b) => b.spend - a.spend);
   }
+}
+
+// ── Campaign name → sku_master category ──────────────
+
+const CAMPAIGN_CATEGORY_RULES: Array<{ patterns: string[]; category: string }> = [
+  { patterns: ['IM AK', 'SURAH RAHMAN-METAL', 'WA-BASMALA-METAL', 'WA-MASHALLAH', 'WA-LA ILAHE', 'WA-PROTECTION', 'WA-BARAKAH', 'WA-DUA-', 'WA-NAMES OF ALLAH', 'WA-SURAH', 'WA-HORIZONTAL', 'WA-BLACK MIRROR', 'NAMES OF ALLAH', 'MIHRAB', 'ALLAH AND MOHAMMAD', 'MASHALLAH-TABARAKALLAH'], category: 'IWA Metal' },
+  { patterns: ['AYATUL KURSI-WOODEN', 'TT-BISM', 'TT-BASMALA', 'TT-ISLAMIC BOOKEND', 'SUB-ALHAM-ALLAH-WOODEN', 'MASJID-WOODEN', 'ISLAMIC CLOCK-WOODEN', 'ISLAMIC CLOCK', '-WOODEN-'], category: 'IWA Ahsap' },
+  { patterns: ['TT-'], category: 'IWA Tabletop' },
+  { patterns: ['AYATUL KURSI-GLASS', 'WA-AYATUL KURSI MIHRAB DOME', '-GLASS-'], category: 'Shukran Cam' },
+  { patterns: ['CAH ', 'MAP-', 'MAP_', 'KV183'], category: 'CFW Ahsap Harita' },
+  { patterns: ['MANDALA'], category: 'CFW Metal' },
+  { patterns: ['MOB ', 'OTTOMAN', 'WALNUT', 'PIANO', 'FRN'], category: 'Mobilya' },
+  { patterns: ['KV-'], category: 'Kanvas' },
+  { patterns: ['ITE ', 'ITE-', 'EMBROIDERED', 'PLACEMATS'], category: 'Tekstil' },
+  { patterns: ['DS STAR', 'DS BUZ', 'STRAFOR', 'STYROFOAM', 'STARFOR'], category: 'Alsat' },
+  { patterns: ['IA ', 'IA-', 'CR CONCRETE', 'IWA RAMADAN', 'RMDN', 'IMA '], category: 'IWA Ahsap' },
+  { patterns: ['WA-', 'WA '], category: 'IWA Metal' },
+];
+
+function campaignToCategory(campaignName: string): string {
+  // Extract product group prefix (before " - MA - SP" or " - UNV")
+  const prefix = campaignName.split(' - MA - SP')[0].split(' - UNV')[0].trim();
+  const upper = prefix.toUpperCase();
+
+  for (const { patterns, category } of CAMPAIGN_CATEGORY_RULES) {
+    for (const pattern of patterns) {
+      if (upper.startsWith(pattern) || upper.includes(pattern)) {
+        return category;
+      }
+    }
+  }
+
+  return 'Other';
 }
