@@ -23,7 +23,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit
 
       - name: Type check
         run: npx tsc -b --noEmit
@@ -71,7 +71,7 @@ jobs:
           cache-dependency-path: backend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit
 
       - name: Type check
         run: npx tsc --noEmit
@@ -99,5 +99,5 @@ jobs:
           port: 2222
           script: |
             cd /var/www/adpilot
-            npm ci --omit=dev --ignore-scripts
+            npm install --no-audit --omit=dev --ignore-scripts
             pm2 restart adpilot-backend || pm2 start dist/index.js --name adpilot-backend
