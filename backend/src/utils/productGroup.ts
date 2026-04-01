@@ -29,33 +29,47 @@ export function extractProductGroup(campaignName: string): string {
 }
 
 /**
- * Category assignment based on product group keywords
- * Based on CLAUDE.md category mapping
+ * Category assignment — maps campaign product_group to sku_master categories.
+ * Order matters: more specific patterns first, catch-all patterns last.
  */
-const CATEGORY_KEYWORDS: Record<string, string[]> = {
-  'Islamic Wall Art': [
-    'WA-', 'MIHRAB', 'AYATUL', 'BASMALA', 'MASHALLAH', 'SURAH', 'ALLAH',
-    'ISLAMIC', 'IM AK', 'IMA', 'NAMES OF', 'GOLDEN RATIO', 'SUB-ALHAM',
-    'BARAKAH', 'PROTECTION', 'CLOCK', 'BOOKEND', 'QURAN', 'LA ILAHE',
-    'BIS MAASH', 'BISM ALHAM', 'TT-', 'KEY HOLDER', 'DUA', 'FRN',
-  ],
-  'World Maps': ['CAH', 'MAP', 'KV183'],
-  'Styrofoam Panels': ['STRAFOR', 'STYROFOAM', 'DS STAR', 'DS BUZ'],
-  'Furniture': ['PIANO', 'OTTOMAN', 'STOOL', 'MOB'],
-  'Ramadan Seasonal': ['RMDN', 'RAMADAN'],
-  'Mandala Art': ['MANDALA'],
-  'Islamic Accessories': ['IA', 'IWA', 'ITE', 'CR CONCRETE', 'CARD'],
-};
+const CATEGORY_RULES: Array<{ patterns: string[]; category: string }> = [
+  // IWA Metal: IM- prefix, metal wall art, named Islamic wall art campaigns
+  { patterns: ['IM AK', 'SURAH RAHMAN-METAL', 'WA-BASMALA-METAL', 'WA-MASHALLAH', 'WA-LA ILAHE', 'WA-PROTECTION', 'WA-BARAKAH', 'WA-DUA', 'WA-NAMES OF ALLAH', 'WA-SURAH', 'WA-HORIZONTAL', 'WA-BLACK MIRROR', 'NAMES OF ALLAH', 'MIHRAB', 'ALLAH AND MOHAMMAD', 'MASHALLAH-TABARAKALLAH'], category: 'IWA Metal' },
+  // IWA Ahsap: wooden products
+  { patterns: ['AYATUL KURSI-WOODEN', 'TT-BISM', 'TT-BASMALA', 'TT-ISLAMIC BOOKEND', 'SUB-ALHAM-ALLAH-WOODEN', 'MASJID-WOODEN', 'ISLAMIC CLOCK-WOODEN', 'ISLAMIC CLOCK', '-WOODEN-'], category: 'IWA Ahsap' },
+  // IWA Tabletop: TT- prefix tabletop items
+  { patterns: ['TT-', 'TT'], category: 'IWA Tabletop' },
+  // Shukran Cam: glass products
+  { patterns: ['AYATUL KURSI-GLASS', 'WA-AYATUL KURSI MIHRAB DOME', '-GLASS-', 'SHUKRAN CAM'], category: 'Shukran Cam' },
+  // CFW Ahsap Harita: wooden world maps
+  { patterns: ['CAH ', 'MAP-', 'MAP_', 'KV183', 'CFW AHSAP HARITA', 'CFW AHŞAP HARITA'], category: 'CFW Ahsap Harita' },
+  // CFW Metal: metal wall decor (non-Islamic)
+  { patterns: ['MANDALA', 'CFW METAL'], category: 'CFW Metal' },
+  // CFW Metal Ustu Ahsap
+  { patterns: ['CFW METAL ÜSTÜ AHŞAP', 'CFW METAL USTU AHSAP'], category: 'CFW Metal Ustu Ahsap' },
+  // Mobilya: furniture
+  { patterns: ['MOB ', 'OTTOMAN', 'WALNUT', 'PIANO', 'FRN'], category: 'Mobilya' },
+  // Kanvas
+  { patterns: ['KV-', 'KANVAS'], category: 'Kanvas' },
+  // Tekstil
+  { patterns: ['ITE ', 'ITE-', 'EMBROIDERED', 'PLACEMATS'], category: 'Tekstil' },
+  // Alsat: Styrofoam panels
+  { patterns: ['DS STAR', 'DS BUZ', 'STRAFOR', 'STYROFOAM', 'STARFOR'], category: 'Alsat' },
+  // IWA Ahsap: Islamic accessories (acrylic, concrete, stickers, cards, seasonal)
+  { patterns: ['IA ', 'IA-', 'CR CONCRETE', 'IWA RAMADAN', 'RMDN', 'IMA '], category: 'IWA Ahsap' },
+  // Catch-all WA (Islamic wall art → IWA Metal)
+  { patterns: ['WA-', 'WA'], category: 'IWA Metal' },
+];
 
 /**
- * Determine category from product group name
+ * Determine category from product group name using sku_master categories.
  */
 export function determineCategory(productGroup: string): string | undefined {
-  const upperProductGroup = productGroup.toUpperCase();
+  const upper = productGroup.toUpperCase();
 
-  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-    for (const keyword of keywords) {
-      if (upperProductGroup.includes(keyword.toUpperCase())) {
+  for (const { patterns, category } of CATEGORY_RULES) {
+    for (const pattern of patterns) {
+      if (upper.startsWith(pattern) || upper.includes(pattern)) {
         return category;
       }
     }
