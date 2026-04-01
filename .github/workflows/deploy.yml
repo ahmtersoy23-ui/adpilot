@@ -98,6 +98,6 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 2222
           script: |
-            cd /var/www/adpilot/backend
-            npm ci --omit=dev
+            cd /var/www/adpilot
+            npm install --omit=dev
             pm2 restart adpilot-backend || pm2 start dist/index.js --name adpilot-backend
