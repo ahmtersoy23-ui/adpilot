@@ -16,13 +16,14 @@ export default function Layout() {
         <div className="h-16 flex items-center gap-3 px-5 border-b border-slate-100">
           <svg width="28" height="28" viewBox="0 0 32 32" className="flex-shrink-0">
             <defs>
-              <linearGradient id="logo-g" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#818cf8"/>
-                <stop offset="1" stopColor="#4338ca"/>
+              <linearGradient id="logo-g" x1="0" y1="32" x2="32" y2="0" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#312e81"/>
+                <stop offset="1" stopColor="#6366f1"/>
               </linearGradient>
             </defs>
             <rect width="32" height="32" rx="8" fill="url(#logo-g)"/>
-            <path d="M16 5L7 27h5l2-5h4l2 5h5L16 5zm0 8.5L18.5 19h-5L16 13.5z" fill="#fff"/>
+            <polyline points="5,23 11,19 16,21 22,12" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" opacity="0.45"/>
+            <polygon points="26,6 14,14 18,16 16,20 26,6" fill="white"/>
           </svg>
           <div>
             <span className="text-lg font-bold text-slate-900 tracking-tight">Ad</span>
