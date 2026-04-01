@@ -174,3 +174,122 @@ export async function patchActionStatus(actionId: number, status: 'approved' | '
   const { data } = await api.patch(`/actions/${actionId}/status`, { status });
   return data;
 }
+
+export interface ExecutionResult {
+  actionId: number;
+  success: boolean;
+  message: string;
+}
+
+export async function executeAction(actionId: number) {
+  const { data } = await api.post<ExecutionResult>(`/actions/${actionId}/execute`);
+  return data;
+}
+
+export async function executeBulkActions(ids: number[]) {
+  const { data } = await api.post('/actions/bulk-execute', { ids });
+  return data;
+}
+
+// ── Dashboard types ──────────────────────────────────
+
+export type Period = 'L7' | 'L14' | 'L30' | 'L60' | 'L90';
+
+export interface KpiValues {
+  spend: number;
+  sales: number;
+  acos: number;
+  roas: number;
+  orders: number;
+  clicks: number;
+  impressions: number;
+  cpc: number;
+  ctr: number;
+  cvr: number;
+}
+
+export interface KpiResponse {
+  current: KpiValues;
+  previous: KpiValues;
+  change: Record<keyof KpiValues, number | null>;
+  periodStart: string;
+  periodEnd: string;
+  prevStart: string;
+  prevEnd: string;
+}
+
+export interface DailyRow {
+  date: string;
+  spend: number;
+  sales: number;
+  acos: number;
+  orders: number;
+  clicks: number;
+  impressions: number;
+}
+
+export interface CampaignRow {
+  campaign_name: string;
+  spend: number;
+  sales: number;
+  acos: number;
+  roas: number;
+  orders: number;
+  clicks: number;
+  impressions: number;
+  cpc: number;
+  ctr: number;
+}
+
+export interface SearchTermRow {
+  search_term: string;
+  spend: number;
+  sales: number;
+  acos: number;
+  orders: number;
+  clicks: number;
+  impressions: number;
+  cpc: number;
+  ctr: number;
+}
+
+export interface CategoryRow {
+  category: string;
+  asin_count: number;
+  spend: number;
+  sales: number;
+  acos: number;
+  roas: number;
+  orders: number;
+  clicks: number;
+  impressions: number;
+  cpc: number;
+  ctr: number;
+}
+
+// ── Dashboard API functions ──────────────────────────
+
+export async function fetchDashboardKpis(period: Period) {
+  const { data } = await api.get<KpiResponse>('/dashboard/kpis', { params: { period } });
+  return data;
+}
+
+export async function fetchDashboardDaily(period: Period) {
+  const { data } = await api.get<DailyRow[]>('/dashboard/daily', { params: { period } });
+  return data;
+}
+
+export async function fetchDashboardCampaigns(period: Period, limit = 15) {
+  const { data } = await api.get<CampaignRow[]>('/dashboard/campaigns', { params: { period, limit } });
+  return data;
+}
+
+export async function fetchDashboardSearchTerms(period: Period, limit = 20) {
+  const { data } = await api.get<SearchTermRow[]>('/dashboard/search-terms', { params: { period, limit } });
+  return data;
+}
+
+export async function fetchDashboardCategories(period: Period) {
+  const { data } = await api.get<CategoryRow[]>('/dashboard/categories', { params: { period } });
+  return data;
+}

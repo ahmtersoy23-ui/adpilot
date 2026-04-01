@@ -7,6 +7,10 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { pool } from './db/connection';
 import { ExportService } from './services/exportService';
+import { startScheduler, getCronStatus, runDailySync } from './services/scheduler';
+import { DashboardService, Period } from './services/dashboardService';
+import { AdsExecutor } from './services/adsExecutor';
+import { BidOptimizer } from './services/bidOptimizer';
 
 const execAsync = promisify(exec);
 
@@ -895,6 +899,215 @@ app.post('/api/upload', upload.fields([
   }
 });
 
+// ==================== DASHBOARD ENDPOINTS ====================
+
+const dashboardService = new DashboardService();
+const VALID_PERIODS = ['L7', 'L14', 'L30', 'L60', 'L90'];
+
+function parsePeriod(q: unknown): Period {
+  const p = String(q || 'L30').toUpperCase();
+  return VALID_PERIODS.includes(p) ? p as Period : 'L30';
+}
+
+// Dashboard KPIs with period-over-period change
+app.get('/api/dashboard/kpis', async (req, res) => {
+  try {
+    const period = parsePeriod(req.query.period);
+    const data = await dashboardService.getKpis(period);
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching dashboard KPIs:', error);
+    res.status(500).json({ error: 'Failed to fetch KPIs' });
+  }
+});
+
+// Daily time-series
+app.get('/api/dashboard/daily', async (req, res) => {
+  try {
+    const period = parsePeriod(req.query.period);
+    const data = await dashboardService.getDaily(period);
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching daily data:', error);
+    res.status(500).json({ error: 'Failed to fetch daily data' });
+  }
+});
+
+// Top campaigns
+app.get('/api/dashboard/campaigns', async (req, res) => {
+  try {
+    const period = parsePeriod(req.query.period);
+    const limit = Math.min(parseInt(req.query.limit as string) || 15, 50);
+    const data = await dashboardService.getTopCampaigns(period, limit);
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching campaigns:', error);
+    res.status(500).json({ error: 'Failed to fetch campaigns' });
+  }
+});
+
+// Category performance
+app.get('/api/dashboard/categories', async (req, res) => {
+  try {
+    const period = parsePeriod(req.query.period);
+    const data = await dashboardService.getCategories(period);
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    res.status(500).json({ error: 'Failed to fetch categories' });
+  }
+});
+
+// Top search terms
+app.get('/api/dashboard/search-terms', async (req, res) => {
+  try {
+    const period = parsePeriod(req.query.period);
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+    const data = await dashboardService.getTopSearchTerms(period, limit);
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching search terms:', error);
+    res.status(500).json({ error: 'Failed to fetch search terms' });
+  }
+});
+
+// ==================== BID OPTIMIZER ENDPOINTS ====================
+
+const bidOptimizer = new BidOptimizer(pool);
+
+// Preview bid recommendations (dry run)
+app.get('/api/bids/preview', async (req, res) => {
+  try {
+    const lookbackDays = parseInt(req.query.days as string) || 14;
+    const recommendations = await bidOptimizer.preview({ lookbackDays });
+    res.json({
+      count: recommendations.length,
+      totalIncreases: recommendations.filter(r => r.bidDelta > 0).length,
+      totalDecreases: recommendations.filter(r => r.bidDelta < 0).length,
+      recommendations,
+    });
+  } catch (error: any) {
+    console.error('Error in bid preview:', error);
+    res.status(500).json({ error: error.message || 'Preview failed' });
+  }
+});
+
+// Apply bid changes
+app.post('/api/bids/apply', async (req, res) => {
+  try {
+    const { ids } = req.body; // optional: specific keyword IDs to apply
+    const recommendations = await bidOptimizer.preview();
+
+    const filtered = ids?.length
+      ? recommendations.filter(r => ids.includes(r.keywordId))
+      : recommendations;
+
+    if (!filtered.length) {
+      return res.json({ applied: 0, errors: [], message: 'No changes to apply' });
+    }
+
+    // Run async
+    bidOptimizer.apply(filtered).then(result => {
+      console.log(`💰 Bid optimizer: ${result.applied} applied, ${result.errors.length} errors`);
+    }).catch(err => {
+      console.error('Bid apply error:', err.message);
+    });
+
+    res.json({ message: `Applying ${filtered.length} bid changes`, startedAt: new Date().toISOString() });
+  } catch (error: any) {
+    console.error('Error applying bids:', error);
+    res.status(500).json({ error: error.message || 'Apply failed' });
+  }
+});
+
+// Get bid change history
+app.get('/api/bids/history', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const result = await pool.query(`
+      SELECT * FROM bid_history ORDER BY created_at DESC LIMIT $1
+    `, [limit]);
+    res.json(result.rows);
+  } catch (error: any) {
+    // Table might not exist yet
+    if (error.code === '42P01') return res.json([]);
+    console.error('Error fetching bid history:', error);
+    res.status(500).json({ error: 'Failed to fetch history' });
+  }
+});
+
+// ==================== ACTION EXECUTION ENDPOINTS ====================
+
+const adsExecutor = new AdsExecutor(pool);
+
+// Execute a single action via Amazon Ads API
+app.post('/api/actions/:id/execute', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: 'Invalid action ID' });
+    }
+
+    const result = await adsExecutor.executeAction(id);
+    res.json(result);
+  } catch (error: any) {
+    console.error('Error executing action:', error);
+    res.status(500).json({ error: error.message || 'Execution failed' });
+  }
+});
+
+// Execute multiple actions
+app.post('/api/actions/bulk-execute', async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids must be a non-empty array' });
+    }
+
+    if (ids.length > 50) {
+      return res.status(400).json({ error: 'Maximum 50 actions per bulk request' });
+    }
+
+    // Run async — return immediately
+    adsExecutor.executeBulk(ids).then(results => {
+      const succeeded = results.filter(r => r.success).length;
+      console.log(`🎯 Bulk execute: ${succeeded}/${results.length} succeeded`);
+    }).catch(err => {
+      console.error('Bulk execute error:', err.message);
+    });
+
+    res.json({ message: `Executing ${ids.length} actions`, startedAt: new Date().toISOString() });
+  } catch (error: any) {
+    console.error('Error in bulk execute:', error);
+    res.status(500).json({ error: error.message || 'Bulk execution failed' });
+  }
+});
+
+// ==================== CRON ENDPOINTS ====================
+
+// Get cron status
+app.get('/api/cron/status', (req, res) => {
+  res.json(getCronStatus());
+});
+
+// Manually trigger sync
+app.post('/api/cron/trigger', async (req, res) => {
+  const status = getCronStatus();
+  if (status.isRunning) {
+    return res.status(409).json({ error: 'Sync is already running' });
+  }
+
+  // Run async — return immediately
+  runDailySync(pool).then(result => {
+    console.log(`🔄 Manual trigger complete: Snapshot ${result.snapshotId}, ${result.actionCount} actions`);
+  }).catch(err => {
+    console.error('🔄 Manual trigger failed:', err.message);
+  });
+
+  res.json({ message: 'Sync triggered', startedAt: new Date().toISOString() });
+});
+
 // ==================== SETTINGS ENDPOINTS ====================
 
 // GET /api/settings - Get all settings
@@ -964,9 +1177,12 @@ app.put('/api/settings/:key', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`\n🚀 Keyword Ownership Engine API running on http://localhost:${PORT}`);
+  console.log(`\n🚀 AdPilot API running on http://localhost:${PORT}`);
   console.log(`   Health check: http://localhost:${PORT}/health`);
-  console.log(`   Latest snapshot: http://localhost:${PORT}/api/snapshots/latest`);
-  console.log(`   Upload reports: POST http://localhost:${PORT}/api/upload`);
+  console.log(`   Cron status: http://localhost:${PORT}/api/cron/status`);
+  console.log(`   Manual trigger: POST http://localhost:${PORT}/api/cron/trigger`);
   console.log('');
+
+  // Start daily scheduler
+  startScheduler(pool);
 });
