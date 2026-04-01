@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { getAdsClient } from './adsApiClient';
+import { determineCategory } from '../utils/productGroup';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -27,6 +28,7 @@ export interface BidRecommendation {
 export interface BidOptimizerConfig {
   targetAcos: number;          // default target ACOS %
   categoryTargets: Record<string, number>; // per-category overrides
+  campaignTargets: Record<string, number>; // per-campaign (goal) overrides — highest priority
   minBid: number;              // floor
   maxBid: number;              // ceiling
   maxChangePercent: number;    // max daily change %
@@ -38,6 +40,7 @@ export interface BidOptimizerConfig {
 const DEFAULT_CONFIG: BidOptimizerConfig = {
   targetAcos: 25,
   categoryTargets: {},
+  campaignTargets: {},
   minBid: 0.10,
   maxBid: 5.00,
   maxChangePercent: 30,
@@ -82,11 +85,18 @@ export class BidOptimizer {
    */
   async getConfig(): Promise<BidOptimizerConfig> {
     try {
+      // Read target_acos settings (shared with Settings page)
       const result = await this.localPool.query(
-        "SELECT value FROM settings WHERE key = 'bid_optimizer'"
+        "SELECT value FROM settings WHERE key = 'target_acos'"
       );
       if (result.rows.length) {
-        return { ...DEFAULT_CONFIG, ...result.rows[0].value };
+        const v = result.rows[0].value;
+        return {
+          ...DEFAULT_CONFIG,
+          targetAcos: v.default || 25,
+          categoryTargets: v.by_category || {},
+          campaignTargets: v.by_campaign || {},
+        };
       }
     } catch { /* use defaults */ }
     return DEFAULT_CONFIG;
@@ -121,8 +131,13 @@ export class BidOptimizer {
       const currentBid = currentInfo.bid;
       const keywordId = currentInfo.keywordId;
 
-      // Calculate optimal bid
-      const targetAcos = config.categoryTargets[kw.campaign_name] || config.targetAcos;
+      // Calculate optimal bid — priority: campaign target > category target > default
+      const campaignPrefix = kw.campaign_name.split(' - MA - SP')[0].split(' - UNV')[0].trim();
+      const category = determineCategory(campaignPrefix) || '';
+      const targetAcos = config.campaignTargets[kw.campaign_name]
+        ?? config.campaignTargets[campaignPrefix]
+        ?? config.categoryTargets[category]
+        ?? config.targetAcos;
       const rpc = kw.clicks > 0 ? kw.sales / kw.clicks : 0;
 
       let optimalBid: number;
