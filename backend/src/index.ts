@@ -11,6 +11,7 @@ import { startScheduler, getCronStatus, runDailySync } from './services/schedule
 import { DashboardService, Period } from './services/dashboardService';
 import { AdsExecutor } from './services/adsExecutor';
 import { BidOptimizer } from './services/bidOptimizer';
+import { OwnershipService, OwnershipPeriod } from './services/ownershipService';
 
 const execAsync = promisify(exec);
 
@@ -968,6 +969,56 @@ app.get('/api/dashboard/search-terms', async (req, res) => {
   } catch (error) {
     console.error('Error fetching search terms:', error);
     res.status(500).json({ error: 'Failed to fetch search terms' });
+  }
+});
+
+// ==================== OWNERSHIP V2 ENDPOINTS (DataBridge direct) ==
+
+const ownershipService = new OwnershipService();
+const VALID_OWNERSHIP_PERIODS = ['L14', 'L30', 'L60', 'L90'];
+
+function parseOwnershipPeriod(q: unknown): OwnershipPeriod {
+  const p = String(q || 'L30').toUpperCase();
+  return VALID_OWNERSHIP_PERIODS.includes(p) ? p as OwnershipPeriod : 'L30';
+}
+
+// Full ownership analysis
+app.get('/api/v2/ownership', async (req, res) => {
+  try {
+    const period = parseOwnershipPeriod(req.query.period);
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+    const offset = parseInt(req.query.offset as string) || 0;
+    const search = (req.query.search as string || '').toLowerCase();
+
+    const summary = await ownershipService.analyze(period);
+
+    // Filter + paginate
+    let filtered = summary.results;
+    if (search) {
+      filtered = filtered.filter(r =>
+        r.keyword.includes(search)
+        || r.hero?.asin?.includes(search.toUpperCase())
+        || r.hero?.category?.toLowerCase().includes(search)
+      );
+    }
+
+    const total = filtered.length;
+    const paged = filtered.slice(offset, offset + limit);
+
+    res.json({
+      totalKeywords: summary.totalKeywords,
+      ownedKeywords: summary.ownedKeywords,
+      contestedKeywords: summary.contestedKeywords,
+      totalAsins: summary.totalAsins,
+      period,
+      data: paged,
+      total,
+      limit,
+      offset,
+    });
+  } catch (error: any) {
+    console.error('Error in ownership analysis:', error);
+    res.status(500).json({ error: error.message || 'Ownership analysis failed' });
   }
 });
 
