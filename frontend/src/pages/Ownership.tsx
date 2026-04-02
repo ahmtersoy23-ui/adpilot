@@ -24,6 +24,9 @@ interface Hero {
   clicks: number;
   acos: number;
   cvr: number;
+  advSales: number;
+  otherSales: number;
+  otherSkuPercent: number;
 }
 
 interface OwnershipResult {
@@ -146,6 +149,7 @@ export default function Ownership() {
                     <th className="text-right py-3 px-3 font-semibold text-slate-600">Spend</th>
                     <th className="text-right py-3 px-3 font-semibold text-slate-600">Sales</th>
                     <th className="text-right py-3 px-3 font-semibold text-slate-600">ACOS</th>
+                    <th className="text-right py-3 px-3 font-semibold text-slate-600">Other SKU</th>
                     <th className="text-right py-3 px-3 font-semibold text-slate-600">Supporters</th>
                     <th className="text-right py-3 px-3 font-semibold text-slate-600">Competitors</th>
                     <th className="text-center py-3 px-3 font-semibold text-slate-600">Status</th>
@@ -161,7 +165,7 @@ export default function Ownership() {
                     />
                   ))}
                   {data?.data.length === 0 && (
-                    <tr><td colSpan={11} className="py-12 text-center text-slate-400">No results</td></tr>
+                    <tr><td colSpan={12} className="py-12 text-center text-slate-400">No results</td></tr>
                   )}
                 </tbody>
               </table>
@@ -213,6 +217,9 @@ function OwnershipRow({ row, isExpanded, onToggle }: { row: OwnershipResult; isE
         <td className={`py-2.5 px-3 text-right font-medium ${h ? acosColor(h.acos) : 'text-slate-400'}`}>
           {h ? formatPercent(h.acos) : '—'}
         </td>
+        <td className={`py-2.5 px-3 text-right font-medium ${h ? otherSkuColor(h.otherSkuPercent) : 'text-slate-400'}`}>
+          {h ? formatPercent(h.otherSkuPercent) : '—'}
+        </td>
         <td className="py-2.5 px-3 text-right text-slate-700">{row.supporters.length}</td>
         <td className="py-2.5 px-3 text-right text-slate-700">{row.totalCompetitors}</td>
         <td className="py-2.5 px-3 text-center">
@@ -233,7 +240,7 @@ function OwnershipRow({ row, isExpanded, onToggle }: { row: OwnershipResult; isE
           <td className="py-2 px-3 text-right text-xs text-slate-500">{s.score.toFixed(2)}</td>
           <td className="py-2 px-3 text-right text-xs text-slate-500">{formatMoney(s.spend)}</td>
           <td className="py-2 px-3 text-right text-xs text-slate-500">{formatMoney(s.sales)}</td>
-          <td colSpan={4}></td>
+          <td colSpan={5}></td>
         </tr>
       ))}
     </>
@@ -269,5 +276,11 @@ function SummaryCard({ label, value, color = 'text-slate-900', bg = 'bg-white' }
 function acosColor(acos: number): string {
   if (acos > 30) return 'text-rose-600';
   if (acos < 20) return 'text-emerald-600';
+  return 'text-amber-600';
+}
+
+function otherSkuColor(pct: number): string {
+  if (pct > 50) return 'text-rose-600';
+  if (pct < 20) return 'text-emerald-600';
   return 'text-amber-600';
 }

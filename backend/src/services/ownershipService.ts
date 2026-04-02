@@ -35,6 +35,9 @@ export interface KeywordOwnershipResult {
     clicks: number;
     acos: number;
     cvr: number;
+    advSales: number;
+    otherSales: number;
+    otherSkuPercent: number;
   } | null;
   supporters: Array<{
     asin: string;
@@ -148,28 +151,32 @@ export class OwnershipService {
     console.log(`[Ownership] Analyzing ${period} (${startStr} → ${endStr})...`);
 
     // Step 1: Get keyword × ASIN performance
-    // Join: search_term_report → ads_campaign_asin_map (all ASINs per campaign)
+    // Join: search_term_report → advertised_product_report (direct ASIN from API)
     const rawData = await pool.query(`
       SELECT
         st.customer_search_term as keyword,
-        cam.asin,
-        cam.sku,
+        ap.advertised_asin as asin,
+        ap.advertised_sku as sku,
         st.campaign_name,
         SUM(st.spend)::numeric as spend,
         SUM(st.sales_7d)::numeric as sales,
         SUM(st.orders_7d)::int as orders,
         SUM(st.clicks)::int as clicks,
-        SUM(st.impressions)::bigint as impressions
+        SUM(st.impressions)::bigint as impressions,
+        SUM(st.adv_sku_sales_7d)::numeric as adv_sales,
+        SUM(st.other_sku_sales_7d)::numeric as other_sales
       FROM ads_search_term_report st
-      JOIN ads_campaign_asin_map cam
-        ON st.campaign_id = cam.campaign_id
-        AND st.ad_group_id = cam.ad_group_id
+      JOIN ads_advertised_product_report ap
+        ON st.campaign_id = ap.campaign_id
+        AND st.ad_group_id = ap.ad_group_id
+        AND st.report_date = ap.report_date
       WHERE st.profile_id = $1
         AND st.report_date >= $2::date
         AND st.report_date <= $3::date
+        AND ap.advertised_asin IS NOT NULL
         AND st.customer_search_term != '*'
         AND st.customer_search_term != ''
-      GROUP BY st.customer_search_term, cam.asin, cam.sku, st.campaign_name
+      GROUP BY st.customer_search_term, ap.advertised_asin, ap.advertised_sku, st.campaign_name
     `, [PROFILE_ID, startStr, endStr]);
 
     console.log(`[Ownership] ${rawData.rows.length} keyword-ASIN-campaign combos`);
@@ -181,11 +188,13 @@ export class OwnershipService {
     const keywordAsinMap = new Map<string, Map<string, {
       asin: string;
       sku: string;
-      campaignName: string; // highest-spend campaign
+      campaignName: string;
       spend: number;
       sales: number;
       orders: number;
       clicks: number;
+      advSales: number;
+      otherSales: number;
     }>>();
 
     for (const r of rawData.rows) {
@@ -195,6 +204,8 @@ export class OwnershipService {
       const sales = parseFloat(r.sales) || 0;
       const orders = parseInt(r.orders) || 0;
       const clicks = parseInt(r.clicks) || 0;
+      const advSales = parseFloat(r.adv_sales) || 0;
+      const otherSales = parseFloat(r.other_sales) || 0;
 
       if (!keywordAsinMap.has(keyword)) keywordAsinMap.set(keyword, new Map());
       const asinMap = keywordAsinMap.get(keyword)!;
@@ -205,10 +216,11 @@ export class OwnershipService {
         existing.sales += sales;
         existing.orders += orders;
         existing.clicks += clicks;
-        // Keep campaign with highest spend
+        existing.advSales += advSales;
+        existing.otherSales += otherSales;
         if (spend > existing.spend - spend) existing.campaignName = r.campaign_name;
       } else {
-        asinMap.set(asin, { asin, sku: r.sku, campaignName: r.campaign_name, spend, sales, orders, clicks });
+        asinMap.set(asin, { asin, sku: r.sku, campaignName: r.campaign_name, spend, sales, orders, clicks, advSales, otherSales });
       }
     }
 
@@ -278,6 +290,11 @@ export class OwnershipService {
           clicks: hero.clicks,
           acos: +hero.acos.toFixed(2),
           cvr: +(hero.cvr * 100).toFixed(2),
+          advSales: +hero.advSales.toFixed(2),
+          otherSales: +hero.otherSales.toFixed(2),
+          otherSkuPercent: (hero.advSales + hero.otherSales) > 0
+            ? +((hero.otherSales / (hero.advSales + hero.otherSales)) * 100).toFixed(1)
+            : 0,
         },
         supporters: supporters.map(s => ({
           asin: s.asin,
