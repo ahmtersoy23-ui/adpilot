@@ -12,6 +12,10 @@ import { DashboardService, Period } from './services/dashboardService';
 import { AdsExecutor } from './services/adsExecutor';
 import { BidOptimizer } from './services/bidOptimizer';
 import { OwnershipService, OwnershipPeriod } from './services/ownershipService';
+import { getBudgetRecommendations } from './services/budgetRecommendations';
+import { getKeywordBidRecommendations, getAutoTargetBidRecommendations } from './services/bidRecommendations';
+import { getKeywordRecsForAsins, getKeywordRecsForAdGroup } from './services/keywordRecommendations';
+import { getChangeHistory } from './services/changeHistory';
 
 const execAsync = promisify(exec);
 
@@ -1223,6 +1227,99 @@ app.put('/api/settings/:key', async (req, res) => {
   } catch (error) {
     console.error('Error updating setting:', error);
     res.status(500).json({ error: 'Failed to update setting' });
+  }
+});
+
+// ─── Amazon Ads Recommendations & History ───────────────────────────
+
+// Budget recommendations — recommended daily budget + missed opportunities
+app.get('/api/recommendations/budget', async (req, res) => {
+  try {
+    const ids = (req.query.campaignIds as string)?.split(',').filter(Boolean);
+    if (!ids?.length) {
+      return res.status(400).json({ error: 'campaignIds query param required (comma-separated)' });
+    }
+    const data = await getBudgetRecommendations(ids);
+    res.json({ recommendations: data });
+  } catch (error: any) {
+    console.error('[BudgetRecs]', error.response?.status, error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Budget recommendations failed',
+      detail: error.response?.data || error.message,
+    });
+  }
+});
+
+// Bid recommendations — Amazon ML bid suggestions for keywords or auto targets
+app.post('/api/recommendations/bids', async (req, res) => {
+  try {
+    const { campaignId, adGroupId, keywords, type } = req.body;
+    if (!campaignId || !adGroupId) {
+      return res.status(400).json({ error: 'campaignId and adGroupId required' });
+    }
+
+    let data;
+    if (type === 'auto') {
+      data = await getAutoTargetBidRecommendations(campaignId, adGroupId);
+    } else {
+      if (!keywords?.length) {
+        return res.status(400).json({ error: 'keywords array required for keyword bid recs' });
+      }
+      data = await getKeywordBidRecommendations(campaignId, adGroupId, keywords);
+    }
+    res.json({ recommendations: data });
+  } catch (error: any) {
+    console.error('[BidRecs]', error.response?.status, error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Bid recommendations failed',
+      detail: error.response?.data || error.message,
+    });
+  }
+});
+
+// Keyword recommendations — discover new keywords for ASINs or ad groups
+app.get('/api/recommendations/keywords', async (req, res) => {
+  try {
+    const asins = (req.query.asins as string)?.split(',').filter(Boolean);
+    const campaignId = req.query.campaignId as string;
+    const adGroupId = req.query.adGroupId as string;
+    const sort = (req.query.sort as string)?.toUpperCase() as 'CLICKS' | 'CONVERSIONS' | 'DEFAULT' || 'CONVERSIONS';
+    const max = Math.min(Number(req.query.max) || 200, 200);
+
+    let data;
+    if (asins?.length) {
+      data = await getKeywordRecsForAsins(asins, sort, max);
+    } else if (campaignId && adGroupId) {
+      data = await getKeywordRecsForAdGroup(campaignId, adGroupId, sort, max);
+    } else {
+      return res.status(400).json({ error: 'Either asins or campaignId+adGroupId required' });
+    }
+    res.json({ recommendations: data });
+  } catch (error: any) {
+    console.error('[KeywordRecs]', error.response?.status, error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Keyword recommendations failed',
+      detail: error.response?.data || error.message,
+    });
+  }
+});
+
+// Change history — audit trail of campaign/ad group changes
+app.get('/api/history', async (req, res) => {
+  try {
+    const days = Math.min(Number(req.query.days) || 30, 90);
+    const campaignIds = (req.query.campaignIds as string)?.split(',').filter(Boolean);
+    const count = Math.min(Number(req.query.count) || 100, 200);
+    const nextToken = req.query.nextToken as string;
+
+    const data = await getChangeHistory({ daysBack: days, campaignIds, count, nextToken });
+    res.json(data);
+  } catch (error: any) {
+    console.error('[History]', error.response?.status, error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Change history failed',
+      detail: error.response?.data || error.message,
+    });
   }
 });
 
