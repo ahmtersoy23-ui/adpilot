@@ -296,6 +296,7 @@ export class DashboardService {
     const result = await this.pool.query(`
       SELECT
         campaign_name,
+        campaign_id::text as campaign_id,
         SUM(spend)::numeric as spend,
         SUM(sales_7d)::numeric as sales,
         SUM(orders_7d)::int as orders,
@@ -305,7 +306,7 @@ export class DashboardService {
       WHERE profile_id = $1
         AND report_date >= $2::date
         AND report_date <= $3::date
-      GROUP BY campaign_name
+      GROUP BY campaign_name, campaign_id
       ORDER BY SUM(spend) DESC
       LIMIT $4
     `, [US_PROFILE_ID, start, end, limit]);
@@ -317,6 +318,7 @@ export class DashboardService {
       const impressions = parseInt(r.impressions) || 0;
       return {
         campaign_name: r.campaign_name,
+        campaign_id: r.campaign_id,
         spend,
         sales,
         acos: sales > 0 ? +(spend / sales * 100).toFixed(2) : 0,

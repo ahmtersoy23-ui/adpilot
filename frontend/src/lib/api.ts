@@ -230,6 +230,7 @@ export interface DailyRow {
 
 export interface CampaignRow {
   campaign_name: string;
+  campaign_id?: string;
   spend: number;
   sales: number;
   acos: number;
@@ -291,5 +292,118 @@ export async function fetchDashboardSearchTerms(period: Period, limit = 20) {
 
 export async function fetchDashboardCategories(period: Period) {
   const { data } = await api.get<CategoryRow[]>('/dashboard/categories', { params: { period } });
+  return data;
+}
+
+// ── Budget Recommendations ──────────────────────────
+
+export interface BudgetRecommendation {
+  index: number;
+  campaignId: string;
+  suggestedBudget: number;
+  sevenDaysMissedOpportunities?: {
+    startDate: string;
+    endDate: string;
+    percentTimeInBudget: number;
+    estimatedMissedImpressionsLower: number;
+    estimatedMissedImpressionsUpper: number;
+    estimatedMissedClicksLower: number;
+    estimatedMissedClicksUpper: number;
+    estimatedMissedSalesLower: number;
+    estimatedMissedSalesUpper: number;
+  };
+  budgetRuleRecommendation?: any;
+}
+
+export async function fetchBudgetRecommendations(campaignIds: string[]) {
+  const { data } = await api.get<{ recommendations: BudgetRecommendation[] }>(
+    '/recommendations/budget',
+    { params: { campaignIds: campaignIds.join(',') } }
+  );
+  return data.recommendations;
+}
+
+// ── Bid Recommendations ──────────────────────────────
+
+export interface BidValue { suggestedBid: number }
+
+export interface BidExpressionResult {
+  targetingExpression: { type: string; value: string | null };
+  bidValues: BidValue[];
+}
+
+export interface BidTheme {
+  theme: string;
+  bidRecommendationsForTargetingExpressions: BidExpressionResult[];
+}
+
+export async function fetchBidRecommendations(
+  campaignId: string,
+  adGroupId: string,
+  type: 'auto' | 'keyword',
+  keywords?: { text: string; matchType: 'BROAD' | 'EXACT' | 'PHRASE' }[]
+) {
+  const { data } = await api.post<{ recommendations: BidTheme[] }>('/recommendations/bids', {
+    campaignId,
+    adGroupId,
+    type,
+    keywords,
+  });
+  return data.recommendations;
+}
+
+// ── Keyword Recommendations ──────────────────────────
+
+export interface KeywordBidInfo {
+  matchType: string;
+  rank: number;
+  bid: number;
+  suggestedBid: { rangeStart: number; rangeMedian: number; rangeEnd: number };
+}
+
+export interface KeywordRecommendation {
+  keyword: string;
+  translation?: string;
+  userSelectedKeyword: boolean;
+  searchTermImpressionRank?: number;
+  searchTermImpressionShare?: number;
+  recId: string;
+  bidInfo: KeywordBidInfo[];
+}
+
+export async function fetchKeywordRecommendations(asins: string[], max = 200) {
+  const { data } = await api.get<{ recommendations: KeywordRecommendation[] }>(
+    '/recommendations/keywords',
+    { params: { asins: asins.join(','), max } }
+  );
+  return data.recommendations;
+}
+
+// ── Bid Optimizer (existing) ──────────────────────────
+
+export interface BidPreviewRow {
+  keywordId: string;
+  keywordText: string;
+  matchType: string;
+  campaignName: string;
+  adGroupName: string;
+  currentBid: number;
+  optimalBid: number;
+  cappedBid: number;
+  changePercent: number;
+  clicks: number;
+  spend: number;
+  sales: number;
+  acos: number;
+  targetAcos: number;
+}
+
+export async function fetchBidPreview(days = 14) {
+  const { data } = await api.get<{ recommendations: BidPreviewRow[] }>('/bids/preview', { params: { days } });
+  return data.recommendations;
+}
+
+export async function applyBids(ids?: string[]) {
+  const { data } = await api.post('/bids/apply', { ids });
   return data;
 }

@@ -16,6 +16,7 @@ import {
   fetchDashboardCampaigns,
   fetchDashboardSearchTerms,
   fetchDashboardCategories,
+  fetchBudgetRecommendations,
 } from '../lib/api';
 import type {
   Period,
@@ -25,6 +26,7 @@ import type {
   CampaignRow,
   SearchTermRow,
   CategoryRow,
+  BudgetRecommendation,
 } from '../lib/api';
 import { formatMoney, formatPercent, formatDate } from '../lib/format';
 
@@ -43,6 +45,7 @@ export default function Dashboard() {
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [searchTerms, setSearchTerms] = useState<SearchTermRow[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const [budgetAlerts, setBudgetAlerts] = useState<(BudgetRecommendation & { campaign_name?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -62,6 +65,16 @@ export default function Dashboard() {
       setCampaigns(c);
       setSearchTerms(s);
       setCategories(cat);
+
+      // Budget recommendations — use campaign IDs from top campaigns
+      try {
+        const ids = c.map(camp => camp.campaign_id).filter(Boolean) as string[];
+        if (ids.length) {
+          const recs = await fetchBudgetRecommendations(ids);
+          const nameMap = new Map(c.map(camp => [camp.campaign_id, camp.campaign_name]));
+          setBudgetAlerts(recs.map(r => ({ ...r, campaign_name: nameMap.get(String(r.campaignId)) })));
+        }
+      } catch { /* budget recs are non-critical */ }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
@@ -106,6 +119,9 @@ export default function Dashboard() {
         <>
           {/* KPI Cards */}
           {kpis && <KpiCards kpis={kpis} />}
+
+          {/* Budget Alerts */}
+          {budgetAlerts.length > 0 && <BudgetAlerts data={budgetAlerts} />}
 
           {/* Time-series chart */}
           {daily.length > 0 && <DailyChart data={daily} />}
@@ -203,6 +219,57 @@ function DeltaBadge({ change, invert }: { change: number | null; invert?: boolea
     >
       {isPositive ? '↑' : '↓'} {Math.abs(change).toFixed(1)}%
     </span>
+  );
+}
+
+// ── Budget Alerts ────────────────────────────────────
+
+function BudgetAlerts({ data }: { data: (BudgetRecommendation & { campaign_name?: string })[] }) {
+  // Only show campaigns with missed opportunities
+  const alerts = data.filter(r => {
+    const m = r.sevenDaysMissedOpportunities;
+    return m && m.percentTimeInBudget < 1;
+  });
+
+  if (!alerts.length) return null;
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-lg p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+        </svg>
+        <h3 className="text-sm font-semibold text-amber-800 uppercase tracking-wider">
+          Budget-Constrained Campaigns ({alerts.length})
+        </h3>
+      </div>
+      <div className="space-y-2">
+        {alerts.map(r => {
+          const m = r.sevenDaysMissedOpportunities!;
+          const inBudgetPct = (m.percentTimeInBudget * 100).toFixed(0);
+          const missedSales = (m.estimatedMissedSalesLower + m.estimatedMissedSalesUpper) / 2;
+          const missedClicks = (m.estimatedMissedClicksLower + m.estimatedMissedClicksUpper) / 2;
+          return (
+            <div key={r.campaignId} className="flex items-center justify-between bg-white rounded-md px-4 py-2.5 border border-amber-100">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-900 truncate" title={r.campaign_name}>
+                  {r.campaign_name || r.campaignId}
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  In budget {inBudgetPct}% of time
+                  {missedClicks > 0 && <> · ~{Math.round(missedClicks)} missed clicks</>}
+                  {missedSales > 0 && <> · ~${formatMoney(missedSales)} missed sales</>}
+                </p>
+              </div>
+              <div className="text-right ml-4 flex-shrink-0">
+                <p className="text-sm font-bold text-amber-700">${r.suggestedBudget}/day</p>
+                <p className="text-xs text-slate-500">suggested</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
