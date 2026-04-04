@@ -1,9 +1,6 @@
 import * as cron from 'node-cron';
 import { Pool } from 'pg';
-import { fetchFromDataBridge, getDataBridgeProfiles, closeDataBridgePool } from './databridgeAdapter';
-import { DataInsertionService } from './dataInsertion';
-import { OwnershipEngineService } from './ownershipEngine';
-import { ActionEngineService } from './actionEngine';
+import { OwnershipService } from './ownershipService';
 import { BidOptimizer } from './bidOptimizer';
 
 export interface CronStatus {
@@ -16,9 +13,7 @@ export interface CronStatus {
   isRunning: boolean;
 }
 
-const US_PROFILE_ID = 387696953974213;
 const CRON_SCHEDULE = '0 7 * * *'; // 07:00 UTC daily (after DataBridge ads sync at 06:00)
-const LOOKBACK_DAYS = 60;
 
 let status: CronStatus = {
   lastRun: null,
@@ -37,7 +32,9 @@ export function getCronStatus(): CronStatus {
 }
 
 /**
- * Run the full pipeline: DataBridge fetch → snapshot → ownership → actions
+ * Run the daily pipeline: ownership (via DataBridge) + bid optimizer.
+ * No more dataInsertion — ownership v2 queries DataBridge directly,
+ * avoiding 500K+ sequential queries and OOM on 4GB server.
  */
 export async function runDailySync(pool: Pool): Promise<{ snapshotId: number; actionCount: number }> {
   if (status.isRunning) {
@@ -50,71 +47,35 @@ export async function runDailySync(pool: Pool): Promise<{ snapshotId: number; ac
   try {
     console.log('\n⏰ [CRON] Daily sync started at', new Date().toISOString());
 
-    // Calculate date range (last N days, ending yesterday)
-    const endDate = new Date();
-    endDate.setUTCDate(endDate.getUTCDate() - 1);
-    const startDate = new Date(endDate);
-    startDate.setUTCDate(startDate.getUTCDate() - (LOOKBACK_DAYS - 1));
+    // Step 1: Run ownership analysis (queries DataBridge directly — no local insertion)
+    const ownershipService = new OwnershipService();
+    const ownership = await ownershipService.analyze('L30');
 
-    const startStr = startDate.toISOString().split('T')[0];
-    const endStr = endDate.toISOString().split('T')[0];
+    console.log(`  🎯 Ownership: ${ownership.totalKeywords} keywords, ${ownership.ownedKeywords} owned, ${ownership.contestedKeywords} contested`);
 
-    console.log(`  📅 Period: ${startStr} → ${endStr}`);
-
-    // Step 1: Fetch from DataBridge
-    const reports = await fetchFromDataBridge(US_PROFILE_ID, startStr, endStr);
-
-    if (reports.searchTermReport.length === 0 && reports.targetingReport.length === 0) {
-      throw new Error('No data found in DataBridge for this date range');
-    }
-
-    // Step 2: Insert into AdPilot DB → create snapshot
-    const insertionService = new DataInsertionService(pool);
-    const snapshotId = await insertionService.processReports(
-      reports,
-      startDate,
-      endDate,
-    );
-
-    console.log(`  🎯 Snapshot created: ID ${snapshotId}`);
-
-    // Free large DataBridge arrays before ownership engine
-    reports.searchTermReport.length = 0;
-    reports.targetingReport.length = 0;
-    reports.advertisedProductReport.length = 0;
-    if (reports.purchasedProductReport) reports.purchasedProductReport.length = 0;
-    if (global.gc) { global.gc(); console.log('  🧹 GC forced after data insertion'); }
-
-    // Step 3: Run ownership engine
-    const ownershipEngine = new OwnershipEngineService(pool);
-    const assignments = await ownershipEngine.processOwnership(snapshotId);
-
-    // Step 4: Run action engine
-    const actionEngine = new ActionEngineService(pool);
-    const actions = await actionEngine.generateAllActions(snapshotId, assignments);
-    const actionCount = actions.length;
-
-    // Step 5: Run bid optimizer (preview only — apply requires manual trigger or setting)
+    // Step 2: Run bid optimizer (preview only)
+    let bidCount = 0;
     try {
       const optimizer = new BidOptimizer(pool);
       const bidRecs = await optimizer.preview();
-      console.log(`  💰 Bid optimizer: ${bidRecs.length} recommendations generated`);
+      bidCount = bidRecs.length;
+      console.log(`  💰 Bid optimizer: ${bidCount} recommendations generated`);
     } catch (bidErr: any) {
       console.warn(`  ⚠️  Bid optimizer skipped: ${bidErr.message}`);
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`  ✅ [CRON] Daily sync complete in ${elapsed}s — Snapshot ${snapshotId}, ${actionCount} actions\n`);
+    console.log(`  ✅ [CRON] Daily sync complete in ${elapsed}s — ${ownership.ownedKeywords} owned keywords, ${bidCount} bid recs\n`);
 
     // Update status
     status.lastRun = new Date().toISOString();
     status.lastResult = 'success';
-    status.lastSnapshotId = snapshotId;
-    status.lastActionCount = actionCount;
+    status.lastSnapshotId = null;
+    status.lastActionCount = bidCount;
     status.lastError = null;
     status.isRunning = false;
 
-    return { snapshotId, actionCount };
+    return { snapshotId: 0, actionCount: bidCount };
   } catch (error: any) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.error(`  ❌ [CRON] Daily sync failed after ${elapsed}s:`, error.message);
@@ -125,8 +86,6 @@ export async function runDailySync(pool: Pool): Promise<{ snapshotId: number; ac
     status.isRunning = false;
 
     throw error;
-  } finally {
-    await closeDataBridgePool();
   }
 }
 
