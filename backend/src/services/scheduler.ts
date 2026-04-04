@@ -18,7 +18,7 @@ export interface CronStatus {
 
 const US_PROFILE_ID = 387696953974213;
 const CRON_SCHEDULE = '0 7 * * *'; // 07:00 UTC daily (after DataBridge ads sync at 06:00)
-const LOOKBACK_DAYS = 30; // Reduced from 60 to prevent OOM on 4GB server
+const LOOKBACK_DAYS = 60;
 
 let status: CronStatus = {
   lastRun: null,
