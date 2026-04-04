@@ -386,16 +386,18 @@ export interface BidPreviewRow {
   keywordText: string;
   matchType: string;
   campaignName: string;
-  adGroupName: string;
+  campaignId: string;
+  adGroupId: string;
   currentBid: number;
   optimalBid: number;
   cappedBid: number;
-  changePercent: number;
+  bidDelta: number;
   clicks: number;
   spend: number;
   sales: number;
   acos: number;
-  targetAcos: number;
+  rpc: number;
+  reason: string;
 }
 
 export async function fetchBidPreview(days = 14) {

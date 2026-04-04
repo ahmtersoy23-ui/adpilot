@@ -128,10 +128,10 @@ export default function Bids() {
                   <Th>Spend</Th>
                   <Th>Sales</Th>
                   <Th>ACOS</Th>
-                  <Th>Target</Th>
                   <Th>Current</Th>
                   <Th>Optimal</Th>
                   <Th>Change</Th>
+                  <Th align="left">Reason</Th>
                 </tr>
               </thead>
               <tbody>
@@ -156,14 +156,16 @@ export default function Bids() {
                     <Td>{formatMoney(r.spend)}</Td>
                     <Td>{formatMoney(r.sales)}</Td>
                     <Td className={acosColor(r.acos)}>{formatPercent(r.acos)}</Td>
-                    <Td>{formatPercent(r.targetAcos)}</Td>
                     <Td>{formatMoney(r.currentBid)}</Td>
                     <Td className="font-semibold">{formatMoney(r.cappedBid)}</Td>
                     <Td>
-                      <span className={`font-medium ${r.changePercent > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {r.changePercent > 0 ? '+' : ''}{r.changePercent.toFixed(1)}%
+                      <span className={`font-medium ${r.bidDelta > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {r.bidDelta > 0 ? '+' : ''}{r.bidDelta.toFixed(1)}%
                       </span>
                     </Td>
+                    <td className="py-2 px-3 text-xs text-slate-500 max-w-[200px] truncate" title={r.reason}>
+                      {r.reason}
+                    </td>
                   </tr>
                 ))}
               </tbody>
