@@ -78,6 +78,13 @@ export async function runDailySync(pool: Pool): Promise<{ snapshotId: number; ac
 
     console.log(`  🎯 Snapshot created: ID ${snapshotId}`);
 
+    // Free large DataBridge arrays before ownership engine
+    reports.searchTermReport.length = 0;
+    reports.targetingReport.length = 0;
+    reports.advertisedProductReport.length = 0;
+    if (reports.purchasedProductReport) reports.purchasedProductReport.length = 0;
+    if (global.gc) { global.gc(); console.log('  🧹 GC forced after data insertion'); }
+
     // Step 3: Run ownership engine
     const ownershipEngine = new OwnershipEngineService(pool);
     const assignments = await ownershipEngine.processOwnership(snapshotId);
